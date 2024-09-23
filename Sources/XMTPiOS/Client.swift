@@ -65,7 +65,6 @@ public struct ClientOptions {
     public var preAuthenticateToInboxCallback: PreEventCallback?
 
 	public var enableV3 = false
-    public var inboxId: String?
 	public var dbEncryptionKey: Data?
 	public var dbDirectory: String?
 	public var historySyncUrl: String?
@@ -77,7 +76,6 @@ public struct ClientOptions {
 		preCreateIdentityCallback: PreEventCallback? = nil,
         preAuthenticateToInboxCallback: PreEventCallback? = nil,
 		enableV3: Bool = false,
-        inboxId: String? = nil,
 		encryptionKey: Data? = nil,
 		dbDirectory: String? = nil,
 		historySyncUrl: String? = nil
@@ -332,10 +330,6 @@ public final class Client {
 	}
 	
 	public static func getOrCreateInboxId(options: ClientOptions, address: String) async throws -> String {
-        guard options.inboxId == nil else {
-            return options.inboxId!
-        }
-        
 		var inboxId: String
 		do {
 			inboxId = try await getInboxIdForAddress(
