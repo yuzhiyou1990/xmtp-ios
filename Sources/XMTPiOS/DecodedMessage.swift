@@ -25,7 +25,7 @@ public struct DecodedMessage: Sendable {
 	
 	public var deliveryStatus: MessageDeliveryStatus = .published
 
-	init(
+    public init(
 		id: String,
 		client: Client,
 		topic: String,
@@ -67,7 +67,7 @@ public struct DecodedMessage: Sendable {
 		encodedContent.fallback
 	}
 
-	var body: String {
+    public var body: String {
 		do {
 			return try content()
 		} catch {
