@@ -50,7 +50,7 @@ public struct MessageV3: Identifiable {
 	
 	public func decode() throws -> DecodedMessage {
 		do {
-			let encodedContent = try EncodedContent(serializedData: ffiMessage.content)
+			let encodedContent = try EncodedContent(serializedBytes: ffiMessage.content)
 
 			let decodedMessage = DecodedMessage(
 				id: id,
@@ -91,7 +91,7 @@ public struct MessageV3: Identifiable {
 	}
 	
 	public func decrypt() throws -> DecryptedMessage {
-		let encodedContent = try EncodedContent(serializedData: ffiMessage.content)
+		let encodedContent = try EncodedContent(serializedBytes: ffiMessage.content)
 
 		let decrytedMessage =  DecryptedMessage(
 			id: id,

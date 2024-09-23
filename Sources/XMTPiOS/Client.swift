@@ -65,6 +65,7 @@ public struct ClientOptions {
     public var preAuthenticateToInboxCallback: PreEventCallback?
 
 	public var enableV3 = false
+    public var inboxId: String?
 	public var dbEncryptionKey: Data?
 	public var dbDirectory: String?
 	public var historySyncUrl: String?
@@ -76,6 +77,7 @@ public struct ClientOptions {
 		preCreateIdentityCallback: PreEventCallback? = nil,
         preAuthenticateToInboxCallback: PreEventCallback? = nil,
 		enableV3: Bool = false,
+        inboxId: String? = nil,
 		encryptionKey: Data? = nil,
 		dbDirectory: String? = nil,
 		historySyncUrl: String? = nil
@@ -286,14 +288,14 @@ public final class Client {
 
 	static func loadOrCreateKeys(for account: SigningKey, apiClient: ApiClient, options: ClientOptions? = nil) async throws -> PrivateKeyBundleV1 {
 		if let keys = try await loadPrivateKeys(for: account, apiClient: apiClient, options: options) {
-			print("loading existing private keys.")
+            debugPrint("loading existing private keys.")
 			#if DEBUG
-				print("Loaded existing private keys.")
+                debugPrint("Loaded existing private keys.")
 			#endif
 			return keys
 		} else {
 			#if DEBUG
-				print("No existing keys found, creating new bundle.")
+                debugPrint("No existing keys found, creating new bundle.")
 			#endif
 			let keys = try await PrivateKeyBundleV1.generate(wallet: account, options: options)
 			let keyBundle = PrivateKeyBundle(v1: keys)
@@ -330,6 +332,10 @@ public final class Client {
 	}
 	
 	public static func getOrCreateInboxId(options: ClientOptions, address: String) async throws -> String {
+        guard options.inboxId != nil else {
+            return options.inboxId!
+        }
+        
 		var inboxId: String
 		do {
 			inboxId = try await getInboxIdForAddress(
