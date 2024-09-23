@@ -332,7 +332,7 @@ public final class Client {
 	}
 	
 	public static func getOrCreateInboxId(options: ClientOptions, address: String) async throws -> String {
-        guard options.inboxId != nil else {
+        guard options.inboxId == nil else {
             return options.inboxId!
         }
         
