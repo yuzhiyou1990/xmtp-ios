@@ -727,14 +727,11 @@ public actor Conversations {
 			return false
 		}
 		let message = Signature.consentProofText(peerAddress: peerAddress, timestamp: timestamp)
-		guard let signatureData = Data(hex: signature) else {
-			print("Invalid signature format")
-			return false
-		}
+        let signatureData = Data(hex: signature)
 		do {
 			let ethMessage = try Signature.ethHash(message)
-			let recoveredKey = try KeyUtilx.recoverPublicKey(message: ethMessage, signature: signatureData)
-			let address = KeyUtilx.generateAddress(from: recoveredKey).toChecksumAddress()
+			let recoveredKey = try KeyUtilx.recoverPublicKey(hash: ethMessage, signature: signatureData)
+			let address = KeyUtilx.generateAddress(from: recoveredKey)
 			return clientAddress == address
 		} catch {
 			return false

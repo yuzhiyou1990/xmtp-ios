@@ -6,11 +6,11 @@
 //
 
 import Foundation
-
+import CryptoSwift
 
 extension String {
 	public var hexToData: Data {
-		return Data(self.web3.bytesFromHex ?? [])
+        return Data(hex: self)
 	}
 }
 

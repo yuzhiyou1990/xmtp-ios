@@ -7,7 +7,6 @@
 
 import CryptoKit
 import Foundation
-import web3
 
 public let ContentTypeRemoteAttachment = ContentTypeID(authorityID: "xmtp.org", typeID: "remoteStaticAttachment", versionMajor: 1, versionMinor: 0)
 
@@ -216,10 +215,8 @@ public struct RemoteAttachmentCodec: ContentCodec {
 		guard let parameterHex = parameters[name] else {
 			throw RemoteAttachmentError.invalidParameters("missing \(name) parameter")
 		}
-
-		guard let parameterData = parameterHex.web3.hexData else {
-			throw RemoteAttachmentError.invalidParameters("invalid \(name) value")
-		}
+        
+        let parameterData = parameterHex.hexToData
 
 		return Data(parameterData)
 	}

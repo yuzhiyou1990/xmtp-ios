@@ -25,7 +25,7 @@ class ClientTests: XCTestCase {
 		let bo = try PrivateKey.generate()
 
 		do {
-			let client = try await Client.create(
+            _ = try await Client.create(
 				account: bo,
 				options: .init(
 					api: .init(env: .local, isSecure: false),
@@ -142,7 +142,7 @@ class ClientTests: XCTestCase {
 		let key = try Crypto.secureRandomBytes(count: 32)
 		let bo = try PrivateKey.generate()
 		let alix = try PrivateKey.generate()
-		var boClient = try await Client.create(
+        let boClient = try await Client.create(
 			account: bo,
 			options: .init(
 				api: .init(env: .local, isSecure: false),
@@ -166,7 +166,7 @@ class ClientTests: XCTestCase {
 		var groupCount = try await boClient.conversations.groups().count
 		XCTAssertEqual(groupCount, 1)
 
-		try boClient.dropLocalDatabaseConnection()
+//		try boClient.dropLocalDatabaseConnection()
 
 		await assertThrowsAsyncError(try await boClient.conversations.groups())
 
@@ -398,7 +398,7 @@ class ClientTests: XCTestCase {
 			)
 		)
 
-		let group = try await boClient.conversations.newGroup(with: [alixClient.address])
+        _ = try await boClient.conversations.newGroup(with: [alixClient.address])
 		
 		let key2 = try Crypto.secureRandomBytes(count: 32)
 		await assertThrowsAsyncError(
@@ -490,14 +490,14 @@ class ClientTests: XCTestCase {
 			account: alix,
 			options: options
 		)
-		try alixClient.dropLocalDatabaseConnection()
+//		try alixClient.dropLocalDatabaseConnection()
 		try alixClient.deleteLocalDatabase()
 		
 		let alixClient2 = try await Client.create(
 			account: alix,
 			options: options
 		)
-		try alixClient2.dropLocalDatabaseConnection()
+//		try alixClient2.dropLocalDatabaseConnection()
 		try alixClient2.deleteLocalDatabase()
 
 		let alixClient3 = try await Client.create(

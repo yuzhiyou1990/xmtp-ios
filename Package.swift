@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
 	name: "XMTPiOS",
-	platforms: [.iOS(.v14), .macOS(.v11)],
+	platforms: [.iOS(.v15), .macOS(.v11)],
 	products: [
 		// Products define the executables and libraries a package produces, and make them visible to other packages.
 		.library(
@@ -19,13 +19,11 @@ let package = Package(
 	],
 	dependencies: [
 		// Dependencies declare other packages that this package depends on.
-		// .package(url: /* package url */, from: "1.0.0"),
-		.package(url: "https://github.com/GigaBitcoin/secp256k1.swift.git", exact: "0.10.0"),
-		.package(url: "https://github.com/argentlabs/web3.swift", from: "1.1.0"),
 		.package(url: "https://github.com/1024jp/GzipSwift", from: "5.2.0"),
 		.package(url: "https://github.com/bufbuild/connect-swift", exact: "0.12.0"),
 		.package(url: "https://github.com/apple/swift-docc-plugin.git", from: "1.0.0"),
 		.package(url: "https://github.com/xmtp/libxmtp-swift.git", exact: "0.5.8-beta6"),
+        .package(url: "https://github.com/web3swift-team/web3swift.git", from: "3.2.1")
 	],
 	targets: [
 		// Targets are the basic building blocks of a package. A target can define a module or a test suite.
@@ -33,11 +31,10 @@ let package = Package(
 		.target(
 			name: "XMTPiOS",
 			dependencies: [
-				.product(name: "secp256k1", package: "secp256k1.swift"),
-				"web3.swift",
 				.product(name: "Gzip", package: "GzipSwift"),
 				.product(name: "Connect", package: "connect-swift"),
-				.product(name: "LibXMTP", package: "libxmtp-swift")
+				.product(name: "LibXMTP", package: "libxmtp-swift"),
+                .product(name: "web3swift", package: "web3swift")
 			]
 		),
 		.target(

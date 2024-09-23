@@ -7,7 +7,7 @@
 
 import Foundation
 import LibXMTP
-import web3
+import Web3Core
 
 public typealias PreEventCallback = () async throws -> Void
 
@@ -184,10 +184,7 @@ public final class Client {
 			inboxID: v3Client.inboxId(),
 			environment: options.api.env
 		)
-
-		let conversations = client.conversations
-		let contacts = client.contacts
-
+        
 		for codec in (options.codecs) {
 			client.register(codec: codec)
 		}
@@ -224,7 +221,7 @@ public final class Client {
 			let alias = "xmtp-\(options?.api.env.rawValue ?? "")-\(inboxId).db3"
 			let dbURL = directoryURL.appendingPathComponent(alias).path
 			
-			var encryptionKey = options?.dbEncryptionKey
+            let encryptionKey = options?.dbEncryptionKey
 			if (encryptionKey == nil) {
 				throw ClientError.creationError("No encryption key passed for the database. Please store and provide a secure encryption key.")
 			}
@@ -278,8 +275,6 @@ public final class Client {
 		)
 
 		let client = try Client(address: account.address, privateKeyBundleV1: privateKeyBundleV1, apiClient: apiClient, v3Client: v3Client, dbPath: dbPath, installationID: v3Client?.installationId().toHex ?? "", inboxID: v3Client?.inboxId() ?? inboxId)
-		let conversations = client.conversations
-		let contacts = client.contacts
 		try await client.ensureUserContactPublished()
 
 		for codec in (options?.codecs ?? []) {
@@ -323,7 +318,7 @@ public final class Client {
 		)
 
 		for envelope in res.envelopes {
-			let encryptedBundle = try EncryptedPrivateKeyBundle(serializedData: envelope.message)
+            let encryptedBundle = try EncryptedPrivateKeyBundle(serializedBytes: envelope.message)
 			let bundle = try await encryptedBundle.decrypted(with: account, preEnableIdentityCallback: options?.preEnableIdentityCallback)
 			if case .v1 = bundle.version {
 				return bundle.v1
@@ -396,8 +391,6 @@ public final class Client {
 		)
 
 		let result = try Client(address: address, privateKeyBundleV1: v1Bundle, apiClient: apiClient, v3Client: v3Client, dbPath: dbPath, installationID: v3Client?.installationId().toHex ?? "", inboxID: v3Client?.inboxId() ?? inboxId)
-		let conversations = result.conversations
-		let contacts = result.contacts
 		for codec in options.codecs {
 			result.register(codec: codec)
 		}
@@ -635,7 +628,7 @@ public final class Client {
 	}
 
 	func getUserContact(peerAddress: String) async throws -> ContactBundle? {
-		let peerAddress = EthereumAddress(peerAddress).toChecksumAddress()
+        let peerAddress = EthereumAddress(peerAddress)!.address
 		return try await contacts.find(peerAddress)
 	}
 	

@@ -8,7 +8,6 @@
 import Foundation
 
 import LibXMTP
-import web3
 import CryptoKit
 
 typealias PublicKey = Xmtp_MessageContents_PublicKey
@@ -21,7 +20,7 @@ extension PublicKey {
 	init(_ signedPublicKey: SignedPublicKey) throws {
 		self.init()
 
-		let unsignedPublicKey = try PublicKey(serializedData: signedPublicKey.keyBytes)
+		let unsignedPublicKey = try PublicKey(serializedBytes: signedPublicKey.keyBytes)
 
 		timestamp = unsignedPublicKey.timestamp
 		secp256K1Uncompressed.bytes = unsignedPublicKey.secp256K1Uncompressed.bytes
@@ -50,8 +49,9 @@ extension PublicKey {
 
 	init(_ string: String) throws {
 		self.init()
-
-		guard let bytes = string.web3.bytesFromHex else {
+        
+        let bytes = Data(hex: string)
+        guard bytes.count > 0 else {
 			throw PublicKeyError.invalidKeyString
 		}
 
@@ -90,6 +90,6 @@ extension PublicKey {
 	}
 
 	var walletAddress: String {
-		KeyUtilx.generateAddress(from: secp256K1Uncompressed.bytes).toChecksumAddress()
+        KeyUtilx.generateAddress(from: secp256K1Uncompressed.bytes)
 	}
 }

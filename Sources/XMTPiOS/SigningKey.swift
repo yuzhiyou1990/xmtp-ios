@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import web3
 import LibXMTP
 
 /// Defines a type that is used by a ``Client`` to sign keys and messages.
@@ -41,7 +40,7 @@ extension SigningKey {
 
 		let message = try Signature.ethPersonalMessage(signatureText)
 		let recoveredKey = try KeyUtilx.recoverPublicKeyKeccak256(from: signature.rawData, message: message)
-		let address = KeyUtilx.generateAddress(from: recoveredKey).toChecksumAddress()
+		let address = KeyUtilx.generateAddress(from: recoveredKey)
 
 		var authorized = PublicKey()
 		authorized.secp256K1Uncompressed = slimKey.secp256K1Uncompressed
