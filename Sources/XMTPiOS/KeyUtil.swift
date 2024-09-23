@@ -37,7 +37,16 @@ enum KeyUtilx {
 		guard let signature = _compressedSignature else {
 			throw KeyUtilError.invalidContext
 		}
-		return signature
+        let rsData = signature[0..<64]
+        var vData = signature[64]
+        if vData >= 27 && vData <= 30 {
+            vData -= 27
+        } else if vData >= 31 && vData <= 34 {
+            vData -= 31
+        } else if vData >= 35 && vData <= 38 {
+            vData -= 35
+        }
+		return rsData + Data([vData])
 	}
 
     static func generateAddress(from publicKey: Data) -> String {
