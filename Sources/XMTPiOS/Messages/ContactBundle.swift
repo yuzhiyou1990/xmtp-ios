@@ -22,7 +22,7 @@ extension ContactBundle {
 		var contactBundle = ContactBundle()
 
 		// Try to deserialize legacy v1 bundle
-		let publicKeyBundle = try PublicKeyBundle(serializedData: data)
+		let publicKeyBundle = try PublicKeyBundle(serializedBytes: data)
 
 		contactBundle.v1.keyBundle = publicKeyBundle
 

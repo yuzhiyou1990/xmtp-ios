@@ -34,7 +34,7 @@ extension MessageV1 {
 	}
 
 	static func fromBytes(_ bytes: Data) throws -> MessageV1 {
-		let message = try Message(serializedData: bytes)
+        let message = try Message(serializedBytes: bytes)
 		var headerBytes: Data
 		var ciphertext: CipherText
 
@@ -61,7 +61,7 @@ extension MessageV1 {
 	var header: MessageHeaderV1 {
 		get throws {
 			do {
-				return try MessageHeaderV1(serializedData: headerBytes)
+                return try MessageHeaderV1(serializedBytes: headerBytes)
 			} catch {
 				print("Error deserializing MessageHeaderV1 \(error)")
 				throw error
@@ -97,7 +97,7 @@ extension MessageV1 {
 	}
 
 	func decrypt(with viewer: PrivateKeyBundleV1) throws -> Data {
-		let header = try MessageHeaderV1(serializedData: headerBytes)
+        let header = try MessageHeaderV1(serializedBytes: headerBytes)
 
 		let recipient = header.recipient
 		let sender = header.sender

@@ -86,7 +86,7 @@ extension Signature {
 		ecdsaCompact.recovery = UInt32(recovery)
 	}
 
-	var rawData: Data {
+    public var rawData: Data {
 		switch union {
 		case let .ecdsaCompact(ecdsa):
 			return ecdsa.bytes + [UInt8(Int(ecdsa.recovery))]
@@ -97,7 +97,7 @@ extension Signature {
 		}
 	}
 
-	var rawDataWithNormalizedRecovery: Data {
+    public var rawDataWithNormalizedRecovery: Data {
 		var data = rawData
 
 		if data[64] == 0 {
