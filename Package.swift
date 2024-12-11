@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
 	name: "XMTPiOS",
-	platforms: [.iOS(.v14), .macOS(.v11)],
+	platforms: [.iOS(.v15), .macOS(.v11)],
 	products: [
 		.library(
 			name: "XMTPiOS",
@@ -17,20 +17,18 @@ let package = Package(
 		),
 	],
 	dependencies: [
-		.package(url: "https://github.com/tesseract-one/CSecp256k1.swift.git", from: "0.2.0"),
+        .package(url: "https://github.com/web3swift-team/web3swift.git", from: "3.2.1"),
 		.package(url: "https://github.com/bufbuild/connect-swift", exact: "1.0.0"),
 		.package(url: "https://github.com/apple/swift-docc-plugin.git", from: "1.4.3"),
-		.package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", exact: "1.8.3"),
 		.package(url: "https://github.com/xmtp/libxmtp-swift.git", exact: "3.0.10")
 	],
 	targets: [
 		.target(
 			name: "XMTPiOS",
 			dependencies: [
-				.product(name: "CSecp256k1", package: "CSecp256k1.swift"),
+                .product(name: "web3swift", package: "web3swift"),
 				.product(name: "Connect", package: "connect-swift"),
-				.product(name: "LibXMTP", package: "libxmtp-swift"),
-				.product(name: "CryptoSwift", package: "CryptoSwift"),
+				.product(name: "LibXMTP", package: "libxmtp-swift")
 			]
 		),
 		.target(
