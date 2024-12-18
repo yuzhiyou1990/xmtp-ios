@@ -28,12 +28,21 @@
       }
     },
     {
+      "identity" : "csecp256k1.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tesseract-one/CSecp256k1.swift.git",
+      "state" : {
+        "revision" : "cfbd6f540d5084bc96a60af841121472fbe725a3",
+        "version" : "0.2.0"
+      }
+    },
+    {
       "identity" : "libxmtp-swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/xmtp/libxmtp-swift.git",
       "state" : {
-        "revision" : "bab83b5de3ed4713d50535e61bca281179bf04fd",
-        "version" : "3.0.10"
+        "revision" : "203fd6d67bb72e3114b273ce9bbddd6fc747d583",
+        "version" : "3.0.13"
       }
     },
     {
