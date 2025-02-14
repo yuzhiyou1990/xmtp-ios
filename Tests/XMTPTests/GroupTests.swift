@@ -81,7 +81,61 @@ class GroupTests: XCTestCase {
 			try alixGroup.isSuperAdmin(inboxId: fixtures.boClient.inboxID))
 		XCTAssert(
 			try !alixGroup.isSuperAdmin(inboxId: fixtures.alixClient.inboxID))
+	}
 
+	func testCanCreateAGroupWithInboxIdDefaultPermissions() async throws {
+		let fixtures = try await fixtures()
+		let boGroup = try await fixtures.boClient.conversations
+			.newGroupWithInboxIds(
+				with: [fixtures.alixClient.inboxID])
+		try await fixtures.alixClient.conversations.sync()
+		let alixGroup = try await fixtures.alixClient.conversations
+			.listGroups().first!
+		XCTAssert(!boGroup.id.isEmpty)
+		XCTAssert(!alixGroup.id.isEmpty)
+
+		try await alixGroup.addMembers(addresses: [fixtures.caro.address])
+		try await boGroup.sync()
+
+		var alixMembersCount = try await alixGroup.members.count
+		var boMembersCount = try await boGroup.members.count
+		XCTAssertEqual(alixMembersCount, 3)
+		XCTAssertEqual(boMembersCount, 3)
+
+		try await boGroup.addAdmin(inboxId: fixtures.alixClient.inboxID)
+
+		try await alixGroup.removeMembers(addresses: [fixtures.caro.address])
+		try await boGroup.sync()
+
+		alixMembersCount = try await alixGroup.members.count
+		boMembersCount = try await boGroup.members.count
+		XCTAssertEqual(alixMembersCount, 2)
+		XCTAssertEqual(boMembersCount, 2)
+
+		try await boGroup.addMembers(addresses: [fixtures.caro.address])
+		try await alixGroup.sync()
+
+		try await boGroup.removeAdmin(inboxId: fixtures.alixClient.inboxID)
+		try await alixGroup.sync()
+
+		alixMembersCount = try await alixGroup.members.count
+		boMembersCount = try await boGroup.members.count
+		XCTAssertEqual(alixMembersCount, 3)
+		XCTAssertEqual(boMembersCount, 3)
+
+		XCTAssertEqual(
+			try boGroup.permissionPolicySet().addMemberPolicy, .allow)
+		XCTAssertEqual(
+			try alixGroup.permissionPolicySet().addMemberPolicy, .allow)
+
+		XCTAssert(
+			try boGroup.isSuperAdmin(inboxId: fixtures.boClient.inboxID))
+		XCTAssert(
+			try !boGroup.isSuperAdmin(inboxId: fixtures.alixClient.inboxID))
+		XCTAssert(
+			try alixGroup.isSuperAdmin(inboxId: fixtures.boClient.inboxID))
+		XCTAssert(
+			try !alixGroup.isSuperAdmin(inboxId: fixtures.alixClient.inboxID))
 	}
 
 	func testCanCreateAGroupWithAdminPermissions() async throws {
@@ -175,7 +229,7 @@ class GroupTests: XCTestCase {
 		XCTAssertEqual(1, alixGroupCount)
 		XCTAssertEqual(1, boGroupCount)
 	}
-	
+
 	func testCanListGroupsFiltered() async throws {
 		let fixtures = try await fixtures()
 
@@ -191,7 +245,7 @@ class GroupTests: XCTestCase {
 		let convoCount = try await fixtures.boClient.conversations
 			.listGroups().count
 		let convoCountConsent = try await fixtures.boClient.conversations
-			.listGroups(consentState: .allowed).count
+			.listGroups(consentStates: [.allowed]).count
 
 		XCTAssertEqual(convoCount, 2)
 		XCTAssertEqual(convoCountConsent, 2)
@@ -199,12 +253,15 @@ class GroupTests: XCTestCase {
 		try await group.updateConsentState(state: .denied)
 
 		let convoCountAllowed = try await fixtures.boClient.conversations
-			.listGroups(consentState: .allowed).count
+			.listGroups(consentStates: [.allowed]).count
 		let convoCountDenied = try await fixtures.boClient.conversations
-			.listGroups(consentState: .denied).count
+			.listGroups(consentStates: [.denied]).count
+		let convoCountCombined = try await fixtures.boClient.conversations
+			.listGroups(consentStates: [.denied, .allowed]).count
 
 		XCTAssertEqual(convoCountAllowed, 1)
 		XCTAssertEqual(convoCountDenied, 1)
+		XCTAssertEqual(convoCountCombined, 2)
 	}
 
 	func testCanListGroupsOrder() async throws {
@@ -223,17 +280,10 @@ class GroupTests: XCTestCase {
 
 		let conversations = try await fixtures.boClient.conversations
 			.listGroups()
-		let conversationsOrdered = try await fixtures.boClient.conversations
-			.listGroups(order: .lastMessage)
 
 		XCTAssertEqual(conversations.count, 2)
-		XCTAssertEqual(conversationsOrdered.count, 2)
-
 		XCTAssertEqual(
-			conversations.map { $0.id }, [group1.id, group2.id])
-		XCTAssertEqual(
-			conversationsOrdered.map { $0.id },
-			[group2.id, group1.id])
+			conversations.map { $0.id }, [group2.id, group1.id])
 	}
 
 	func testCanListGroupMembers() async throws {
@@ -253,7 +303,7 @@ class GroupTests: XCTestCase {
 
 	func testCanAddGroupMembers() async throws {
 		let fixtures = try await fixtures()
-		fixtures.alixClient.register(codec: GroupUpdatedCodec())
+		Client.register(codec: GroupUpdatedCodec())
 		let group = try await fixtures.alixClient.conversations.newGroup(
 			with: [fixtures.bo.address])
 
@@ -278,7 +328,7 @@ class GroupTests: XCTestCase {
 
 	func testCanAddGroupMembersByInboxId() async throws {
 		let fixtures = try await fixtures()
-		fixtures.alixClient.register(codec: GroupUpdatedCodec())
+		Client.register(codec: GroupUpdatedCodec())
 		let group = try await fixtures.alixClient.conversations.newGroup(
 			with: [fixtures.bo.address])
 
@@ -305,7 +355,7 @@ class GroupTests: XCTestCase {
 
 	func testCanRemoveMembers() async throws {
 		let fixtures = try await fixtures()
-		fixtures.alixClient.register(codec: GroupUpdatedCodec())
+		Client.register(codec: GroupUpdatedCodec())
 		let group = try await fixtures.alixClient.conversations.newGroup(
 			with: [fixtures.bo.address, fixtures.caro.address])
 
@@ -339,7 +389,7 @@ class GroupTests: XCTestCase {
 
 	func testCanRemoveMembersByInboxId() async throws {
 		let fixtures = try await fixtures()
-		fixtures.alixClient.register(codec: GroupUpdatedCodec())
+		Client.register(codec: GroupUpdatedCodec())
 		let group = try await fixtures.alixClient.conversations.newGroup(
 			with: [fixtures.bo.address, fixtures.caro.address])
 
@@ -508,8 +558,7 @@ class GroupTests: XCTestCase {
 
 	func testCanSendMessagesToGroup() async throws {
 		let fixtures = try await fixtures()
-		fixtures.boClient.register(codec: GroupUpdatedCodec())
-		fixtures.alixClient.register(codec: GroupUpdatedCodec())
+		Client.register(codec: GroupUpdatedCodec())
 		let alixGroup = try await fixtures.alixClient.conversations.newGroup(
 			with: [fixtures.bo.address])
 		let membershipChange = GroupUpdated()
@@ -587,7 +636,7 @@ class GroupTests: XCTestCase {
 
 	func testCanStreamGroupMessages() async throws {
 		let fixtures = try await fixtures()
-		fixtures.boClient.register(codec: GroupUpdatedCodec())
+		Client.register(codec: GroupUpdatedCodec())
 		let group = try await fixtures.boClient.conversations.newGroup(with: [
 			fixtures.alix.address
 		])
@@ -701,8 +750,8 @@ class GroupTests: XCTestCase {
 		let alixMessages = try await alixGroup.messages()
 		for message in alixMessages {
 			print(
-				"message", message.encodedContent.type,
-				message.encodedContent.type.typeID)
+				"message", try message.encodedContent.type,
+				try message.encodedContent.type.typeID)
 		}
 		XCTAssertEqual(
 			alixMessages.count, 5,
@@ -715,8 +764,8 @@ class GroupTests: XCTestCase {
 		let boMessages2 = try await boGroup.messages()
 		for message in boMessages2 {
 			print(
-				"message", message.encodedContent.type,
-				message.encodedContent.type.typeID)
+				"message", try message.encodedContent.type,
+				try message.encodedContent.type.typeID)
 		}
 		XCTAssertEqual(
 			boMessages2.count, 5,
@@ -896,9 +945,7 @@ class GroupTests: XCTestCase {
 		XCTAssertEqual(isGroupAllowed, .unknown)
 		let preparedMessageId = try await alixGroup.prepareMessage(
 			content: "Test text")
-		let isGroupAllowed2 = try await fixtures.alixClient.preferences
-			.conversationState(conversationId: boGroup.id)
-		XCTAssertEqual(isGroupAllowed2, .allowed)
+
 		let messageCount = try await alixGroup.messages().count
 		XCTAssertEqual(messageCount, 1)
 		let messageCountPublished = try await alixGroup.messages(
@@ -912,6 +959,9 @@ class GroupTests: XCTestCase {
 
 		_ = try await alixGroup.publishMessages()
 		try await alixGroup.sync()
+		let isGroupAllowed2 = try await fixtures.alixClient.preferences
+			.conversationState(conversationId: boGroup.id)
+		XCTAssertEqual(isGroupAllowed2, .allowed)
 
 		let messageCountPublished2 = try await alixGroup.messages(
 			deliveryStatus: .published
@@ -1009,5 +1059,127 @@ class GroupTests: XCTestCase {
 				}
 			}
 		}
+	}
+
+	func testGroupDisappearingMessages() async throws {
+		let fixtures = try await fixtures()
+
+		let initialSettings = DisappearingMessageSettings(
+			disappearStartingAtNs: 1_000_000_000,
+			retentionDurationInNs: 1_000_000_000  // 1s duration
+		)
+
+		// Create group with disappearing messages enabled
+		let boGroup = try await fixtures.boClient.conversations.newGroup(
+			with: [fixtures.alix.walletAddress],
+			disappearingMessageSettings: initialSettings
+		)
+		_ = try await boGroup.send(content: "howdy")
+		_ = try await fixtures.alixClient.conversations.syncAllConversations()
+
+		let alixGroup = try fixtures.alixClient.findGroup(
+			groupId: boGroup.id)
+
+		let boGroupMessagesCount = try await boGroup.messages().count
+		let alixGroupMessagesCount = try await alixGroup?.messages().count
+		let boGroupSettings = boGroup.disappearingMessageSettings
+
+		// Validate messages exist and settings are applied
+		XCTAssertEqual(boGroupMessagesCount, 2)  // memberAdd, howdy
+		XCTAssertEqual(alixGroupMessagesCount, 1)  // howdy
+		XCTAssertNotNil(boGroupSettings)
+
+		try await Task.sleep(nanoseconds: 5_000_000_000)  // Sleep for 5 seconds
+
+		let boGroupMessagesAfterSleep = try await boGroup.messages().count
+		let alixGroupMessagesAfterSleep = try await alixGroup?.messages().count
+
+		// Validate messages are deleted
+		XCTAssertEqual(boGroupMessagesAfterSleep, 1)  // memberAdd
+		XCTAssertEqual(alixGroupMessagesAfterSleep, 0)
+
+		// Set message disappearing settings to nil
+		try await boGroup.updateDisappearingMessageSettings(nil)
+		try await boGroup.sync()
+		try await alixGroup?.sync()
+
+		let boGroupSettingsAfterNil = boGroup.disappearingMessageSettings
+		let alixGroupSettingsAfterNil = alixGroup?.disappearingMessageSettings
+
+		XCTAssertNil(boGroupSettingsAfterNil)
+		XCTAssertNil(alixGroupSettingsAfterNil)
+		XCTAssertFalse(try boGroup.isDisappearingMessagesEnabled())
+		XCTAssertFalse(try alixGroup!.isDisappearingMessagesEnabled())
+
+		// Send messages after disabling disappearing settings
+		_ = try await boGroup.send(
+			content: "message after disabling disappearing")
+		_ = try await alixGroup?.send(
+			content: "another message after disabling")
+		try await boGroup.sync()
+
+		try await Task.sleep(nanoseconds: 5_000_000_000)  // Sleep for 5 seconds
+
+		let boGroupMessagesPersist = try await boGroup.messages().count
+		let alixGroupMessagesPersist = try await alixGroup?.messages().count
+
+		// Ensure messages persist
+		XCTAssertEqual(boGroupMessagesPersist, 5)  // memberAdd, settings 1, settings 2, boMessage, alixMessage
+		XCTAssertEqual(alixGroupMessagesPersist, 4)  // settings 1, settings 2, boMessage, alixMessage
+
+		// Re-enable disappearing messages
+		let updatedSettings = await DisappearingMessageSettings(
+			disappearStartingAtNs: try boGroup.messages().first!.sentAtNs
+				+ 1_000_000_000,  // 1s from now
+			retentionDurationInNs: 1_000_000_000  // 2s duration
+		)
+		try await boGroup.updateDisappearingMessageSettings(updatedSettings)
+		try await boGroup.sync()
+		try await alixGroup?.sync()
+		try await Task.sleep(nanoseconds: 1_000_000_000)  // Sleep for 1 second
+
+		let boGroupUpdatedSettings = boGroup.disappearingMessageSettings
+		let alixGroupUpdatedSettings = alixGroup?.disappearingMessageSettings
+
+		XCTAssertEqual(
+			boGroupUpdatedSettings!.retentionDurationInNs,
+			updatedSettings.retentionDurationInNs)
+		XCTAssertEqual(
+			alixGroupUpdatedSettings!.retentionDurationInNs,
+			updatedSettings.retentionDurationInNs)
+
+		// Send new messages
+		_ = try await boGroup.send(content: "this will disappear soon")
+		_ = try await alixGroup?.send(content: "so will this")
+		try await boGroup.sync()
+
+		let boGroupMessagesAfterNewSend = try await boGroup.messages().count
+		let alixGroupMessagesAfterNewSend = try await alixGroup?.messages()
+			.count
+
+		XCTAssertEqual(boGroupMessagesAfterNewSend, 9)
+		XCTAssertEqual(alixGroupMessagesAfterNewSend, 8)
+
+		try await Task.sleep(nanoseconds: 6_000_000_000)  // Sleep for 6 seconds to let messages disappear
+
+		let boGroupMessagesFinal = try await boGroup.messages().count
+		let alixGroupMessagesFinal = try await alixGroup?.messages().count
+
+		// Validate messages were deleted
+		XCTAssertEqual(boGroupMessagesFinal, 7)
+		XCTAssertEqual(alixGroupMessagesFinal, 6)
+
+		// Final validation that settings persist
+		let boGroupFinalSettings = boGroup.disappearingMessageSettings
+		let alixGroupFinalSettings = alixGroup?.disappearingMessageSettings
+
+		XCTAssertEqual(
+			boGroupFinalSettings!.retentionDurationInNs,
+			updatedSettings.retentionDurationInNs)
+		XCTAssertEqual(
+			alixGroupFinalSettings!.retentionDurationInNs,
+			updatedSettings.retentionDurationInNs)
+		XCTAssert(try boGroup.isDisappearingMessagesEnabled())
+		XCTAssert(try alixGroup!.isDisappearingMessagesEnabled())
 	}
 }

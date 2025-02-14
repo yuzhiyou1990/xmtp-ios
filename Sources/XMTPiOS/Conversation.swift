@@ -26,6 +26,33 @@ public enum Conversation: Identifiable, Equatable, Hashable {
 		}
 	}
 
+	public var disappearingMessageSettings: DisappearingMessageSettings? {
+		switch self {
+		case let .group(group):
+			return group.disappearingMessageSettings
+		case let .dm(dm):
+			return dm.disappearingMessageSettings
+		}
+	}
+
+	public func isDisappearingMessagesEnabled() throws -> Bool {
+		switch self {
+		case let .group(group):
+			return try group.isDisappearingMessagesEnabled()
+		case let .dm(dm):
+			return try dm.isDisappearingMessagesEnabled()
+		}
+	}
+
+	public func lastMessage() async throws -> Message? {
+		switch self {
+		case let .group(group):
+			return try await group.lastMessage()
+		case let .dm(dm):
+			return try await dm.lastMessage()
+		}
+	}
+
 	public func isCreator() async throws -> Bool {
 		switch self {
 		case let .group(group):
@@ -62,6 +89,28 @@ public enum Conversation: Identifiable, Equatable, Hashable {
 		}
 	}
 
+	public func updateDisappearingMessageSettings(
+		_ disappearingMessageSettings: DisappearingMessageSettings?
+	) async throws {
+		switch self {
+		case let .group(group):
+			try await group.updateDisappearingMessageSettings(
+				disappearingMessageSettings)
+		case let .dm(dm):
+			try await dm.updateDisappearingMessageSettings(
+				disappearingMessageSettings)
+		}
+	}
+
+	public func clearDisappearingMessageSettings() async throws {
+		switch self {
+		case let .group(group):
+			try await group.clearDisappearingMessageSettings()
+		case let .dm(dm):
+			try await dm.clearDisappearingMessageSettings()
+		}
+	}
+
 	public func sync() async throws {
 		switch self {
 		case let .group(group):
@@ -71,7 +120,7 @@ public enum Conversation: Identifiable, Equatable, Hashable {
 		}
 	}
 
-	public func processMessage(messageBytes: Data) async throws -> Message {
+	public func processMessage(messageBytes: Data) async throws -> Message? {
 		switch self {
 		case let .group(group):
 			return try await group.processMessage(messageBytes: messageBytes)
@@ -166,10 +215,6 @@ public enum Conversation: Identifiable, Equatable, Hashable {
 		}
 	}
 
-	public var clientAddress: String {
-		return client.address
-	}
-
 	public var topic: String {
 		switch self {
 		case let .group(group):
@@ -179,7 +224,7 @@ public enum Conversation: Identifiable, Equatable, Hashable {
 		}
 	}
 
-	public func streamMessages() -> AsyncThrowingStream<DecodedMessage, Error> {
+	public func streamMessages() -> AsyncThrowingStream<Message, Error> {
 		switch self {
 		case let .group(group):
 			return group.streamMessages()
@@ -194,7 +239,7 @@ public enum Conversation: Identifiable, Equatable, Hashable {
 		afterNs: Int64? = nil,
 		direction: SortDirection? = .descending,
 		deliveryStatus: MessageDeliveryStatus = .all
-	) async throws -> [DecodedMessage] {
+	) async throws -> [Message] {
 		switch self {
 		case let .group(group):
 			return try await group.messages(
@@ -209,12 +254,33 @@ public enum Conversation: Identifiable, Equatable, Hashable {
 		}
 	}
 
-	var client: Client {
+	public var client: Client {
 		switch self {
 		case let .group(group):
 			return group.client
 		case let .dm(dm):
 			return dm.client
+		}
+	}
+
+	public func messagesWithReactions(
+		limit: Int? = nil,
+		beforeNs: Int64? = nil,
+		afterNs: Int64? = nil,
+		direction: SortDirection? = .descending,
+		deliveryStatus: MessageDeliveryStatus = .all
+	) async throws -> [Message] {
+		switch self {
+		case let .group(group):
+			return try await group.messagesWithReactions(
+				beforeNs: beforeNs, afterNs: afterNs, limit: limit,
+				direction: direction, deliveryStatus: deliveryStatus
+			)
+		case let .dm(dm):
+			return try await dm.messagesWithReactions(
+				beforeNs: beforeNs, afterNs: afterNs, limit: limit,
+				direction: direction, deliveryStatus: deliveryStatus
+			)
 		}
 	}
 }

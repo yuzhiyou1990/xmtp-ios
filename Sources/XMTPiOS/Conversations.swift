@@ -30,10 +30,6 @@ public enum ConversationError: Error, CustomStringConvertible, LocalizedError {
 	}
 }
 
-public enum ConversationOrder {
-	case createdAt, lastMessage
-}
-
 public enum ConversationType {
 	case all, groups, dms
 }
@@ -79,21 +75,21 @@ public actor Conversations {
 	public func sync() async throws {
 		try await ffiConversations.sync()
 	}
-	public func syncAllConversations(consentState: ConsentState? = nil)
+	public func syncAllConversations(consentStates: [ConsentState]? = nil)
 		async throws -> UInt32
 	{
 		return try await ffiConversations.syncAllConversations(
-			consentState: consentState?.toFFI)
+			consentStates: consentStates?.toFFI)
 	}
 
 	public func listGroups(
 		createdAfter: Date? = nil, createdBefore: Date? = nil,
-		limit: Int? = nil, order: ConversationOrder = .createdAt,
-		consentState: ConsentState? = nil
-	) async throws -> [Group] {
+		limit: Int? = nil,
+		consentStates: [ConsentState]? = nil
+	) throws -> [Group] {
 		var options = FfiListConversationsOptions(
 			createdAfterNs: nil, createdBeforeNs: nil, limit: nil,
-			consentState: consentState?.toFFI)
+			consentStates: consentStates?.toFFI, includeDuplicateDms: false)
 		if let createdAfter {
 			options.createdAfterNs = Int64(createdAfter.millisecondsSinceEpoch)
 		}
@@ -104,25 +100,22 @@ public actor Conversations {
 		if let limit {
 			options.limit = Int64(limit)
 		}
-		let conversations = try await ffiConversations.listGroups(
+		let conversations = try ffiConversations.listGroups(
 			opts: options)
 
-		let sortedConversations = try await sortConversations(
-			conversations, order: order)
-
-		return sortedConversations.map {
+		return conversations.map {
 			$0.groupFromFFI(client: client)
 		}
 	}
 
 	public func listDms(
 		createdAfter: Date? = nil, createdBefore: Date? = nil,
-		limit: Int? = nil, order: ConversationOrder = .createdAt,
-		consentState: ConsentState? = nil
-	) async throws -> [Dm] {
+		limit: Int? = nil,
+		consentStates: [ConsentState]? = nil
+	) throws -> [Dm] {
 		var options = FfiListConversationsOptions(
 			createdAfterNs: nil, createdBeforeNs: nil, limit: nil,
-			consentState: consentState?.toFFI)
+			consentStates: consentStates?.toFFI, includeDuplicateDms: false)
 		if let createdAfter {
 			options.createdAfterNs = Int64(createdAfter.millisecondsSinceEpoch)
 		}
@@ -133,25 +126,22 @@ public actor Conversations {
 		if let limit {
 			options.limit = Int64(limit)
 		}
-		let conversations = try await ffiConversations.listDms(
+		let conversations = try ffiConversations.listDms(
 			opts: options)
 
-		let sortedConversations = try await sortConversations(
-			conversations, order: order)
-
-		return sortedConversations.map {
+		return conversations.map {
 			$0.dmFromFFI(client: client)
 		}
 	}
 
 	public func list(
 		createdAfter: Date? = nil, createdBefore: Date? = nil,
-		limit: Int? = nil, order: ConversationOrder = .createdAt,
-		consentState: ConsentState? = nil
+		limit: Int? = nil,
+		consentStates: [ConsentState]? = nil
 	) async throws -> [Conversation] {
 		var options = FfiListConversationsOptions(
 			createdAfterNs: nil, createdBeforeNs: nil, limit: nil,
-			consentState: consentState?.toFFI)
+			consentStates: consentStates?.toFFI, includeDuplicateDms: false)
 		if let createdAfter {
 			options.createdAfterNs = Int64(createdAfter.millisecondsSinceEpoch)
 		}
@@ -162,50 +152,16 @@ public actor Conversations {
 		if let limit {
 			options.limit = Int64(limit)
 		}
-		let ffiConversations = try await ffiConversations.list(
+		let ffiConversations = try ffiConversations.list(
 			opts: options)
 
-		let sortedConversations = try await sortConversations(
-            ffiConversations, order: order)
-        
-        var conversations: [Conversation] = []
-        for sortedConversation in sortedConversations {
-            let conversation = try await sortedConversation.toConversation(client: client)
-            conversations.append(conversation)
-        }
-
-		return conversations
-	}
-
-	private func sortConversations(
-		_ conversations: [FfiConversation],
-		order: ConversationOrder
-	) async throws -> [FfiConversation] {
-		switch order {
-		case .lastMessage:
-			var conversationWithTimestamp: [(FfiConversation, Int64?)] = []
-
-			for conversation in conversations {
-				let message = try await conversation.findMessages(
-					opts: FfiListMessagesOptions(
-						sentBeforeNs: nil,
-						sentAfterNs: nil,
-						limit: 1,
-						deliveryStatus: nil,
-						direction: .descending
-					)
-				).first
-				conversationWithTimestamp.append(
-					(conversation, message?.sentAtNs))
-			}
-
-			let sortedTuples = conversationWithTimestamp.sorted { (lhs, rhs) in
-				(lhs.1 ?? 0) > (rhs.1 ?? 0)
-			}
-			return sortedTuples.map { $0.0 }
-		case .createdAt:
-			return conversations
+		var conversations: [Conversation] = []
+		for conversation in ffiConversations {
+			let conversation = try await conversation.toConversation(
+				client: client)
+			conversations.append(conversation)
 		}
+		return conversations
 	}
 
 	public func stream(type: ConversationType = .all) -> AsyncThrowingStream<
@@ -271,7 +227,20 @@ public actor Conversations {
 		}
 	}
 
-	public func findOrCreateDm(with peerAddress: String) async throws -> Dm {
+	public func newConversation(
+		with peerAddress: String,
+		disappearingMessageSettings: DisappearingMessageSettings? = nil
+	) async throws -> Conversation {
+		let dm = try await findOrCreateDm(
+			with: peerAddress,
+			disappearingMessageSettings: disappearingMessageSettings)
+		return Conversation.dm(dm)
+	}
+
+	public func findOrCreateDm(
+		with peerAddress: String,
+		disappearingMessageSettings: DisappearingMessageSettings? = nil
+	) async throws -> Dm {
 		if peerAddress.lowercased() == client.address.lowercased() {
 			throw ConversationError.memberCannotBeSelf
 		}
@@ -280,17 +249,53 @@ public actor Conversations {
 		if !canMessage {
 			throw ConversationError.memberNotRegistered([peerAddress])
 		}
-		if let existingDm = try await client.findDmByAddress(
-			address: peerAddress)
-		{
-			return existingDm
+
+		let dm =
+			try await ffiConversations
+			.findOrCreateDm(
+				accountAddress: peerAddress.lowercased(),
+				opts: FfiCreateDmOptions(
+					messageDisappearingSettings: FfiMessageDisappearingSettings(
+						fromNs: disappearingMessageSettings?
+							.disappearStartingAtNs ?? 0,
+						inNs: disappearingMessageSettings?.retentionDurationInNs
+							?? 0)))
+
+		return dm.dmFromFFI(client: client)
+	}
+
+	public func newConversationWithInboxId(
+		with peerInboxId: String,
+		disappearingMessageSettings: DisappearingMessageSettings? = nil
+	) async throws -> Conversation {
+		let dm = try await findOrCreateDmWithInboxId(
+			with: peerInboxId,
+			disappearingMessageSettings: disappearingMessageSettings)
+		return Conversation.dm(dm)
+	}
+
+	public func findOrCreateDmWithInboxId(
+		with peerInboxId: String,
+		disappearingMessageSettings: DisappearingMessageSettings? = nil
+	)
+		async throws -> Dm
+	{
+		if peerInboxId.lowercased() == client.inboxID.lowercased() {
+			throw ConversationError.memberCannotBeSelf
 		}
 
-		let newDm =
+		let dm =
 			try await ffiConversations
-			.createDm(accountAddress: peerAddress.lowercased())
-			.dmFromFFI(client: client)
-		return newDm
+			.findOrCreateDmByInboxId(
+				inboxId: peerInboxId,
+				opts: FfiCreateDmOptions(
+					messageDisappearingSettings: FfiMessageDisappearingSettings(
+						fromNs: disappearingMessageSettings?
+							.disappearStartingAtNs ?? 0,
+						inNs: disappearingMessageSettings?.retentionDurationInNs
+							?? 0)))
+		return dm.dmFromFFI(client: client)
+
 	}
 
 	public func newGroup(
@@ -299,7 +304,7 @@ public actor Conversations {
 		name: String = "",
 		imageUrlSquare: String = "",
 		description: String = "",
-		pinnedFrameUrl: String = ""
+		disappearingMessageSettings: DisappearingMessageSettings? = nil
 	) async throws -> Group {
 		return try await newGroupInternal(
 			with: addresses,
@@ -309,8 +314,8 @@ public actor Conversations {
 			name: name,
 			imageUrlSquare: imageUrlSquare,
 			description: description,
-			pinnedFrameUrl: pinnedFrameUrl,
-			permissionPolicySet: nil
+			permissionPolicySet: nil,
+			disappearingMessageSettings: disappearingMessageSettings
 		)
 	}
 
@@ -320,7 +325,7 @@ public actor Conversations {
 		name: String = "",
 		imageUrlSquare: String = "",
 		description: String = "",
-		pinnedFrameUrl: String = ""
+		disappearingMessageSettings: DisappearingMessageSettings? = nil
 	) async throws -> Group {
 		return try await newGroupInternal(
 			with: addresses,
@@ -328,20 +333,20 @@ public actor Conversations {
 			name: name,
 			imageUrlSquare: imageUrlSquare,
 			description: description,
-			pinnedFrameUrl: pinnedFrameUrl,
 			permissionPolicySet: PermissionPolicySet.toFfiPermissionPolicySet(
-				permissionPolicySet)
+				permissionPolicySet),
+			disappearingMessageSettings: disappearingMessageSettings
 		)
 	}
 
 	private func newGroupInternal(
 		with addresses: [String],
-		permissions: FfiGroupPermissionsOptions = .allMembers,
+		permissions: FfiGroupPermissionsOptions = .default,
 		name: String = "",
 		imageUrlSquare: String = "",
 		description: String = "",
-		pinnedFrameUrl: String = "",
-		permissionPolicySet: FfiPermissionPolicySet? = nil
+		permissionPolicySet: FfiPermissionPolicySet? = nil,
+		disappearingMessageSettings: DisappearingMessageSettings? = nil
 	) async throws -> Group {
 		if addresses.first(where: {
 			$0.lowercased() == client.address.lowercased()
@@ -365,20 +370,99 @@ public actor Conversations {
 				groupName: name,
 				groupImageUrlSquare: imageUrlSquare,
 				groupDescription: description,
-				groupPinnedFrameUrl: pinnedFrameUrl,
-				customPermissionPolicySet: permissionPolicySet
+				customPermissionPolicySet: permissionPolicySet,
+				messageDisappearingSettings: FfiMessageDisappearingSettings(
+					fromNs: disappearingMessageSettings?
+						.disappearStartingAtNs ?? 0,
+					inNs: disappearingMessageSettings?
+						.retentionDurationInNs ?? 0
+				)
+			)
+		).groupFromFFI(client: client)
+		return group
+	}
+
+	public func newGroupWithInboxIds(
+		with inboxIds: [String],
+		permissions: GroupPermissionPreconfiguration = .allMembers,
+		name: String = "",
+		imageUrlSquare: String = "",
+		description: String = "",
+		disappearingMessageSettings: DisappearingMessageSettings? = nil
+	) async throws -> Group {
+		return try await newGroupInternalWithInboxIds(
+			with: inboxIds,
+			permissions:
+				GroupPermissionPreconfiguration.toFfiGroupPermissionOptions(
+					option: permissions),
+			name: name,
+			imageUrlSquare: imageUrlSquare,
+			description: description,
+			permissionPolicySet: nil,
+			disappearingMessageSettings: disappearingMessageSettings
+		)
+	}
+
+	public func newGroupCustomPermissionsWithInboxIds(
+		with inboxIds: [String],
+		permissionPolicySet: PermissionPolicySet,
+		name: String = "",
+		imageUrlSquare: String = "",
+		description: String = "",
+		disappearingMessageSettings: DisappearingMessageSettings? = nil
+	) async throws -> Group {
+		return try await newGroupInternalWithInboxIds(
+			with: inboxIds,
+			permissions: FfiGroupPermissionsOptions.customPolicy,
+			name: name,
+			imageUrlSquare: imageUrlSquare,
+			description: description,
+			permissionPolicySet: PermissionPolicySet.toFfiPermissionPolicySet(
+				permissionPolicySet),
+			disappearingMessageSettings: disappearingMessageSettings
+		)
+	}
+
+	private func newGroupInternalWithInboxIds(
+		with inboxIds: [String],
+		permissions: FfiGroupPermissionsOptions = .default,
+		name: String = "",
+		imageUrlSquare: String = "",
+		description: String = "",
+		permissionPolicySet: FfiPermissionPolicySet? = nil,
+		disappearingMessageSettings: DisappearingMessageSettings? = nil
+	) async throws -> Group {
+		if inboxIds.contains(where: {
+			$0.lowercased() == client.inboxID.lowercased()
+		}) {
+			throw ConversationError.memberCannotBeSelf
+		}
+		let group = try await ffiConversations.createGroupWithInboxIds(
+			inboxIds: inboxIds,
+			opts: FfiCreateGroupOptions(
+				permissions: permissions,
+				groupName: name,
+				groupImageUrlSquare: imageUrlSquare,
+				groupDescription: description,
+				customPermissionPolicySet: permissionPolicySet,
+				messageDisappearingSettings: FfiMessageDisappearingSettings(
+					fromNs: disappearingMessageSettings?
+						.disappearStartingAtNs ?? 0,
+					inNs: disappearingMessageSettings?
+						.retentionDurationInNs ?? 0
+				)
 			)
 		).groupFromFFI(client: client)
 		return group
 	}
 
 	public func streamAllMessages(type: ConversationType = .all)
-		-> AsyncThrowingStream<DecodedMessage, Error>
+		-> AsyncThrowingStream<Message, Error>
 	{
 		AsyncThrowingStream { continuation in
 			let ffiStreamActor = FfiStreamActor()
 
-			let messageCallback = MessageCallback(client: self.client) {
+			let messageCallback = MessageCallback {
 				message in
 				guard !Task.isCancelled else {
 					continuation.finish()
@@ -387,13 +471,8 @@ public actor Conversations {
 					}
 					return
 				}
-				do {
-					continuation.yield(
-						try Message(client: self.client, ffiMessage: message)
-							.decode()
-					)
-				} catch {
-					print("Error onMessage \(error)")
+				if let message = Message.create(ffiMessage: message) {
+					continuation.yield(message)
 				}
 			}
 
@@ -434,10 +513,29 @@ public actor Conversations {
 		return try await conversation.toConversation(client: client)
 	}
 
-	public func newConversation(
-		with peerAddress: String
-	) async throws -> Conversation {
-		let dm = try await findOrCreateDm(with: peerAddress)
-		return Conversation.dm(dm)
+	public func getHmacKeys() throws
+		-> Xmtp_KeystoreApi_V1_GetConversationHmacKeysResponse
+	{
+		var hmacKeysResponse =
+			Xmtp_KeystoreApi_V1_GetConversationHmacKeysResponse()
+		let conversations = try ffiConversations.getHmacKeys()
+		for convo in conversations {
+			var hmacKeys =
+				Xmtp_KeystoreApi_V1_GetConversationHmacKeysResponse.HmacKeys()
+			for key in convo.value {
+				var hmacKeyData =
+					Xmtp_KeystoreApi_V1_GetConversationHmacKeysResponse
+					.HmacKeyData()
+				hmacKeyData.hmacKey = key.key
+				hmacKeyData.thirtyDayPeriodsSinceEpoch = Int32(key.epoch)
+				hmacKeys.values.append(hmacKeyData)
+
+			}
+			hmacKeysResponse.hmacKeys[
+				Topic.groupMessage(convo.key.toHex).description] = hmacKeys
+		}
+
+		return hmacKeysResponse
 	}
+
 }

@@ -64,7 +64,7 @@ class ConversationTests: XCTestCase {
 		let convoCount = try await fixtures.boClient.conversations
 			.list().count
 		let convoCountConsent = try await fixtures.boClient.conversations
-			.list(consentState: .allowed).count
+			.list(consentStates: [.allowed]).count
 
 		XCTAssertEqual(convoCount, 2)
 		XCTAssertEqual(convoCountConsent, 2)
@@ -72,14 +72,17 @@ class ConversationTests: XCTestCase {
 		try await group.updateConsentState(state: .denied)
 
 		let convoCountAllowed = try await fixtures.boClient.conversations
-			.list(consentState: .allowed).count
+			.list(consentStates: [.allowed]).count
 		let convoCountDenied = try await fixtures.boClient.conversations
-			.list(consentState: .denied).count
+			.list(consentStates: [.denied]).count
+		let convoCountCombined = try await fixtures.boClient.conversations
+			.list(consentStates: [.denied, .allowed]).count
 
 		XCTAssertEqual(convoCountAllowed, 1)
 		XCTAssertEqual(convoCountDenied, 1)
+		XCTAssertEqual(convoCountCombined, 2)
 	}
-	
+
 	func testCanSyncAllConversationsFiltered() async throws {
 		let fixtures = try await fixtures()
 
@@ -92,20 +95,23 @@ class ConversationTests: XCTestCase {
 		let convoCount = try await fixtures.boClient.conversations
 			.syncAllConversations()
 		let convoCountConsent = try await fixtures.boClient.conversations
-			.syncAllConversations(consentState: .allowed)
+			.syncAllConversations(consentStates: [.allowed])
 
-		XCTAssertEqual(convoCount, 2)
-		XCTAssertEqual(convoCountConsent, 2)
+		XCTAssertEqual(convoCount, 3)
+		XCTAssertEqual(convoCountConsent, 3)
 
 		try await group.updateConsentState(state: .denied)
 
 		let convoCountAllowed = try await fixtures.boClient.conversations
-			.syncAllConversations(consentState: .allowed)
+			.syncAllConversations(consentStates: [.allowed])
 		let convoCountDenied = try await fixtures.boClient.conversations
-			.syncAllConversations(consentState: .denied)
+			.syncAllConversations(consentStates: [.denied])
+		let convoCountCombined = try await fixtures.boClient.conversations
+			.syncAllConversations(consentStates: [.denied, .allowed])
 
-		XCTAssertEqual(convoCountAllowed, 1)
-		XCTAssertEqual(convoCountDenied, 1)
+		XCTAssertEqual(convoCountAllowed, 2)
+		XCTAssertEqual(convoCountDenied, 2)
+		XCTAssertEqual(convoCountCombined, 3)
 	}
 
 	func testCanListConversationsOrder() async throws {
@@ -124,17 +130,10 @@ class ConversationTests: XCTestCase {
 
 		let conversations = try await fixtures.boClient.conversations
 			.list()
-		let conversationsOrdered = try await fixtures.boClient.conversations
-			.list(order: .lastMessage)
 
 		XCTAssertEqual(conversations.count, 3)
-		XCTAssertEqual(conversationsOrdered.count, 3)
-
 		XCTAssertEqual(
-			conversations.map { $0.id }, [dm.id, group1.id, group2.id])
-		XCTAssertEqual(
-			conversationsOrdered.map { $0.id },
-			[group2.id, dm.id, group1.id])
+			conversations.map { $0.id }, [group2.id, dm.id, group1.id])
 	}
 
 	func testCanStreamConversations() async throws {
@@ -190,122 +189,32 @@ class ConversationTests: XCTestCase {
 		await fulfillment(of: [expectation1], timeout: 3)
 	}
 
-	func testSyncConsent() async throws {
-		let fixtures = try await fixtures()
-
+	func testReturnsAllHMACKeys() async throws {
 		let key = try Crypto.secureRandomBytes(count: 32)
-		let alix = try PrivateKey.generate()
-		var alixClient = try await Client.create(
-			account: alix,
-			options: .init(
-				api: .init(env: .local, isSecure: false),
-				dbEncryptionKey: key,
-				dbDirectory: "xmtp_db"
-			)
-		)
-
-		let dm = try await alixClient.conversations.findOrCreateDm(
-			with: fixtures.bo.walletAddress)
-		try await dm.updateConsentState(state: .denied)
-		XCTAssertEqual(try dm.consentState(), .denied)
-
-		try await fixtures.boClient.conversations.sync()
-		let boDm = try await fixtures.boClient.findConversation(conversationId: dm.id)
-
-		var alixClient2 = try await Client.create(
-			account: alix,
-			options: .init(
-				api: .init(env: .local, isSecure: false),
-				dbEncryptionKey: key,
-				dbDirectory: "xmtp_db2"
-			)
-		)
-
-		let state = try await alixClient2.inboxState(refreshFromNetwork: true)
-		XCTAssertEqual(state.installations.count, 2)
-
-		try await fixtures.boClient.conversations.sync()
-		try await boDm?.sync()
-		try await alixClient2.preferences.syncConsent()
-		try await alixClient.conversations.syncAllConversations()
-		sleep(2)
-		try await alixClient2.conversations.syncAllConversations()
-		sleep(2)
-
-		if let dm2 = try await alixClient2.findConversation(conversationId: dm.id) {
-			XCTAssertEqual(try dm2.consentState(), .denied)
-
-			try await alixClient2.preferences.setConsentState(
-				entries: [
-					ConsentRecord(
-						value: dm2.id,
-						entryType: .conversation_id,
-						consentType: .allowed
+		let opts = ClientOptions(
+			api: ClientOptions.Api(env: .local, isSecure: false),
+			dbEncryptionKey: key)
+		let fixtures = try await fixtures()
+		var conversations: [Conversation] = []
+		for _ in 0..<5 {
+			let account = try PrivateKey.generate()
+			let client = try await Client.create(
+				account: account, options: opts)
+			do {
+				let newConversation = try await fixtures.alixClient
+					.conversations
+					.newConversation(
+						with: client.address
 					)
-				]
-			)
-			let convoState = try await alixClient2.preferences
-				.conversationState(
-					conversationId: dm2.id)
-			XCTAssertEqual(convoState, .allowed)
-			XCTAssertEqual(try dm2.consentState(), .allowed)
-		}
-	}
-	
-	func testStreamConsent() async throws {
-		let fixtures = try await fixtures()
-
-		let key = try Crypto.secureRandomBytes(count: 32)
-		let alix = try PrivateKey.generate()
-
-		let alixClient = try await Client.create(
-			account: alix,
-			options: .init(
-				api: .init(env: .local, isSecure: false),
-				dbEncryptionKey: key,
-				dbDirectory: "xmtp_db"
-			)
-		)
-
-		let alixGroup = try await alixClient.conversations.newGroup(with: [fixtures.bo.walletAddress])
-
-		let alixClient2 = try await Client.create(
-			account: alix,
-			options: .init(
-				api: .init(env: .local, isSecure: false),
-				dbEncryptionKey: key,
-				dbDirectory: "xmtp_db2"
-			)
-		)
-		
-		try await alixGroup.send(content: "Hello")
-		try await alixClient.conversations.syncAllConversations()
-		try await alixClient2.conversations.syncAllConversations()
-		let alixGroup2 = try alixClient2.findGroup(groupId: alixGroup.id)!
-
-		var consentList = [ConsentRecord]()
-		let expectation = XCTestExpectation(description: "Stream Consent")
-		expectation.expectedFulfillmentCount = 3
-
-		Task(priority: .userInitiated) {
-			for try await entry in await alixClient.preferences.streamConsent() {
-				consentList.append(entry)
-				expectation.fulfill()
+				conversations.append(newConversation)
+			} catch {
+				print("Error creating conversation: \(error)")
 			}
 		}
-		sleep(1)
-		try await alixGroup2.updateConsentState(state: .denied)
-		let dm = try await alixClient2.conversations.newConversation(with: fixtures.caro.walletAddress)
-		try await dm.updateConsentState(state: .denied)
-
-		sleep(5)
-		try await alixClient.conversations.syncAllConversations()
-		try await alixClient2.conversations.syncAllConversations()
-
-		await fulfillment(of: [expectation], timeout: 3)
-		print(consentList)
-		XCTAssertEqual(try alixGroup.consentState(), .denied)
+		let hmacKeys = try await fixtures.alixClient.conversations.getHmacKeys()
+		let topics = hmacKeys.hmacKeys.keys
+		conversations.forEach { conversation in
+			XCTAssertTrue(topics.contains(conversation.topic))
+		}
 	}
-
-
 }

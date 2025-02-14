@@ -60,14 +60,15 @@ public struct ClientOptions {
 		preAuthenticateToInboxCallback: PreEventCallback? = nil,
 		dbEncryptionKey: Data,
 		dbDirectory: String? = nil,
-		historySyncUrl: String? = nil
+		historySyncUrl: String? = nil,
+		useDefaultHistorySyncUrl: Bool = true
 	) {
 		self.api = api
 		self.codecs = codecs
 		self.preAuthenticateToInboxCallback = preAuthenticateToInboxCallback
 		self.dbEncryptionKey = dbEncryptionKey
 		self.dbDirectory = dbDirectory
-		if historySyncUrl == nil {
+		if useDefaultHistorySyncUrl && historySyncUrl == nil {
 			switch api.env {
 			case .production:
 				self.historySyncUrl =
@@ -84,6 +85,18 @@ public struct ClientOptions {
 	}
 }
 
+actor ApiClientCache {
+	private var apiClientCache: [String: XmtpApiClient] = [:]
+
+	func getClient(forKey key: String) -> XmtpApiClient? {
+		return apiClientCache[key]
+	}
+
+	func setClient(_ client: XmtpApiClient, forKey key: String) {
+		apiClientCache[key] = client
+	}
+}
+
 public final class Client {
 	public let address: String
 	public let inboxID: String
@@ -91,17 +104,17 @@ public final class Client {
 	public let dbPath: String
 	public let installationID: String
 	public let environment: XMTPEnvironment
-	public let apiClient: XmtpApiClient
 	private let ffiClient: LibXMTP.FfiXmtpClient
+	private static let apiCache = ApiClientCache()
 
 	public lazy var conversations: Conversations = .init(
 		client: self, ffiConversations: ffiClient.conversations())
 	public lazy var preferences: PrivatePreferences = .init(
 		client: self, ffiClient: ffiClient)
 
-	var codecRegistry = CodecRegistry()
+	static var codecRegistry = CodecRegistry()
 
-	public func register(codec: any ContentCodec) {
+	public static func register(codec: any ContentCodec) {
 		codecRegistry.register(codec: codec)
 	}
 
@@ -112,12 +125,11 @@ public final class Client {
 		inboxId: String,
 		apiClient: XmtpApiClient? = nil
 	) async throws -> Client {
-		let (libxmtpClient, dbPath, apiClient) = try await initFFiClient(
+		let (libxmtpClient, dbPath) = try await initFFiClient(
 			accountAddress: accountAddress.lowercased(),
 			options: options,
 			signingKey: signingKey,
-			inboxId: inboxId,
-			apiClient: apiClient
+			inboxId: inboxId
 		)
 
 		let client = try Client(
@@ -126,21 +138,19 @@ public final class Client {
 			dbPath: dbPath,
 			installationID: libxmtpClient.installationId().toHex,
 			inboxID: libxmtpClient.inboxId(),
-			environment: options.api.env,
-			apiClient: apiClient
+			environment: options.api.env
 		)
 
 		// Register codecs
 		for codec in options.codecs {
-			client.register(codec: codec)
+			register(codec: codec)
 		}
 
 		return client
 	}
 
 	public static func create(
-		account: SigningKey, options: ClientOptions,
-		apiClient: XmtpApiClient? = nil
+		account: SigningKey, options: ClientOptions
 	)
 		async throws -> Client
 	{
@@ -152,14 +162,12 @@ public final class Client {
 			accountAddress: accountAddress,
 			options: options,
 			signingKey: account,
-			inboxId: inboxId,
-			apiClient: apiClient
+			inboxId: inboxId
 		)
 	}
 
 	public static func build(
-		address: String, options: ClientOptions, inboxId: String? = nil,
-		apiClient: XmtpApiClient? = nil
+		address: String, options: ClientOptions, inboxId: String? = nil
 	)
 		async throws -> Client
 	{
@@ -176,8 +184,7 @@ public final class Client {
 			accountAddress: accountAddress,
 			options: options,
 			signingKey: nil,
-			inboxId: resolvedInboxId,
-			apiClient: apiClient
+			inboxId: resolvedInboxId
 		)
 	}
 
@@ -185,9 +192,8 @@ public final class Client {
 		accountAddress: String,
 		options: ClientOptions,
 		signingKey: SigningKey?,
-		inboxId: String,
-		apiClient: XmtpApiClient? = nil
-	) async throws -> (FfiXmtpClient, String, XmtpApiClient) {
+		inboxId: String
+	) async throws -> (FfiXmtpClient, String) {
 		let address = accountAddress.lowercased()
 
 		let mlsDbDirectory = options.dbDirectory
@@ -214,22 +220,15 @@ public final class Client {
 		let alias = "xmtp-\(options.api.env.rawValue)-\(inboxId).db3"
 		let dbURL = directoryURL.appendingPathComponent(alias).path
 
-		let xmtpApiClient: XmtpApiClient
-		if let existingApiClient = apiClient {
-			xmtpApiClient = existingApiClient
-		} else {
-			xmtpApiClient = try await connectToApiBackend(api: options.api)
-		}
-
 		let ffiClient = try await LibXMTP.createClient(
-			api: xmtpApiClient,
+			api: connectToApiBackend(api: options.api),
 			db: dbURL,
 			encryptionKey: options.dbEncryptionKey,
 			inboxId: inboxId,
 			accountAddress: address,
 			nonce: 0,
 			legacySignedPrivateKeyProto: nil,
-			historySyncUrl: nil
+			historySyncUrl: options.historySyncUrl
 		)
 
 		try await options.preAuthenticateToInboxCallback?()
@@ -252,7 +251,7 @@ public final class Client {
 			}
 		}
 
-		return (ffiClient, dbURL, xmtpApiClient)
+		return (ffiClient, dbURL)
 	}
 
 	private static func handleSignature(
@@ -282,12 +281,19 @@ public final class Client {
 		}
 	}
 
-	public static func connectToApiBackend(
-		api: ClientOptions.Api
-	) async throws -> XmtpApiClient {
-		return try await connectToBackend(
-			host: api.env.url,
-			isSecure: api.env.isSecure == true)
+	public static func connectToApiBackend(api: ClientOptions.Api) async throws
+		-> XmtpApiClient
+	{
+		let cacheKey = api.env.url
+
+		if let cachedClient = await apiCache.getClient(forKey: cacheKey) {
+			return cachedClient
+		}
+
+		let apiClient = try await connectToBackend(
+			host: api.env.url, isSecure: api.isSecure)
+		await apiCache.setClient(apiClient, forKey: cacheKey)
+		return apiClient
 	}
 
 	public static func getOrCreateInboxId(
@@ -297,8 +303,7 @@ public final class Client {
 		do {
 			inboxId =
 				try await getInboxIdForAddress(
-					host: api.env.url,
-					isSecure: api.env.isSecure == true,
+					api: connectToApiBackend(api: api),
 					accountAddress: address.lowercased()
 				)
 				?? generateInboxId(
@@ -310,20 +315,14 @@ public final class Client {
 		return inboxId
 	}
 
-	public static func canMessage(
-		accountAddresses: [String],
-		api: ClientOptions.Api
-	) async throws -> [String: Bool] {
-		let address = "0x0000000000000000000000000000000000000000"
+	private static func prepareClient(
+		api: ClientOptions.Api,
+		address: String = "0x0000000000000000000000000000000000000000"
+	) async throws -> FfiXmtpClient {
 		let inboxId = try await getOrCreateInboxId(api: api, address: address)
-
-		let directoryURL: URL = URL.documentsDirectory
-		let alias = "xmtp-\(api.env.rawValue)-\(inboxId).db3"
-		let dbURL = directoryURL.appendingPathComponent(alias).path
-
-		let ffiClient = try await LibXMTP.createClient(
+		return try await LibXMTP.createClient(
 			api: connectToApiBackend(api: api),
-			db: dbURL,
+			db: nil,
 			encryptionKey: nil,
 			inboxId: inboxId,
 			accountAddress: address,
@@ -331,21 +330,30 @@ public final class Client {
 			legacySignedPrivateKeyProto: nil,
 			historySyncUrl: nil
 		)
+	}
 
-		let result = try await ffiClient.canMessage(
+	public static func canMessage(
+		accountAddresses: [String],
+		api: ClientOptions.Api
+	) async throws -> [String: Bool] {
+		let ffiClient = try await prepareClient(api: api)
+		return try await ffiClient.canMessage(
 			accountAddresses: accountAddresses)
+	}
 
-		try ffiClient.releaseDbConnection()
-		let fm = FileManager.default
-		try fm.removeItem(atPath: dbURL)
-
-		return result
+	public static func inboxStatesForInboxIds(
+		inboxIds: [String],
+		api: ClientOptions.Api
+	) async throws -> [InboxState] {
+		let ffiClient = try await prepareClient(api: api)
+		let result = try await ffiClient.addressesFromInboxId(
+			refreshFromNetwork: true, inboxIds: inboxIds)
+		return result.map { InboxState(ffiInboxState: $0) }
 	}
 
 	init(
 		address: String, ffiClient: LibXMTP.FfiXmtpClient, dbPath: String,
-		installationID: String, inboxID: String, environment: XMTPEnvironment,
-		apiClient: XmtpApiClient
+		installationID: String, inboxID: String, environment: XMTPEnvironment
 	) throws {
 		self.address = address
 		self.ffiClient = ffiClient
@@ -353,22 +361,39 @@ public final class Client {
 		self.installationID = installationID
 		self.inboxID = inboxID
 		self.environment = environment
-		self.apiClient = apiClient
 	}
 
-	public func addAccount(newAccount: SigningKey)
+	@available(
+		*, deprecated,
+		message:
+			"This function is delicate and should be used with caution. Adding a wallet already associated with an inboxId will cause the wallet to loose access to that inbox. See: inboxIdFromAddress(address)"
+	)
+	public func addAccount(
+		newAccount: SigningKey, allowReassignInboxId: Bool = false
+	)
 		async throws
 	{
-		let signatureRequest = try await ffiClient.addWallet(
-			newWalletAddress: newAccount.address.lowercased())
-		do {
-			try await Client.handleSignature(
-				for: signatureRequest, signingKey: newAccount)
-			try await ffiClient.applySignatureRequest(
-				signatureRequest: signatureRequest)
-		} catch {
+		let inboxId: String? =
+			allowReassignInboxId
+			? nil : try await inboxIdFromAddress(address: newAccount.address)
+
+		if allowReassignInboxId || (inboxId?.isEmpty ?? true) {
+			let signatureRequest = try await ffiClient.addWallet(
+				newWalletAddress: newAccount.address.lowercased())
+
+			do {
+				try await Client.handleSignature(
+					for: signatureRequest, signingKey: newAccount)
+				try await ffiClient.applySignatureRequest(
+					signatureRequest: signatureRequest)
+			} catch {
+				throw ClientError.creationError(
+					"Failed to sign the message: \(error.localizedDescription)")
+			}
+		} else {
 			throw ClientError.creationError(
-				"Failed to sign the message: \(error.localizedDescription)")
+				"This wallet is already associated with inbox \(inboxId ?? "Unknown")"
+			)
 		}
 	}
 
@@ -391,6 +416,23 @@ public final class Client {
 	public func revokeAllOtherInstallations(signingKey: SigningKey) async throws
 	{
 		let signatureRequest = try await ffiClient.revokeAllOtherInstallations()
+		do {
+			try await Client.handleSignature(
+				for: signatureRequest, signingKey: signingKey)
+			try await ffiClient.applySignatureRequest(
+				signatureRequest: signatureRequest)
+		} catch {
+			throw ClientError.creationError(
+				"Failed to sign the message: \(error.localizedDescription)")
+		}
+	}
+
+	public func revokeInstallations(
+		signingKey: SigningKey, installationIds: [String]
+	) async throws {
+		let installations = installationIds.map { $0.hexToData }
+		let signatureRequest = try await ffiClient.revokeInstallations(
+			installationIds: installations)
 		do {
 			try await Client.handleSignature(
 				for: signatureRequest, signingKey: signingKey)
@@ -468,7 +510,8 @@ public final class Client {
 		do {
 			return Group(
 				ffiGroup: try ffiClient.conversation(
-					conversationId: groupId.hexToData), client: self)
+					conversationId: groupId.hexToData),
+				client: self)
 		} catch {
 			return nil
 		}
@@ -513,7 +556,8 @@ public final class Client {
 		do {
 			let conversation = try ffiClient.dmConversation(
 				targetInboxId: inboxId)
-			return Dm(ffiConversation: conversation, client: self)
+			return Dm(
+				ffiConversation: conversation, client: self)
 		} catch {
 			return nil
 		}
@@ -529,17 +573,12 @@ public final class Client {
 
 	public func findMessage(messageId: String) throws -> Message? {
 		do {
-			return Message(
-				client: self,
+			return Message.create(
 				ffiMessage: try ffiClient.message(
 					messageId: messageId.hexToData))
 		} catch {
 			return nil
 		}
-	}
-
-	public func requestMessageHistorySync() async throws {
-		try await ffiClient.sendSyncRequest(kind: .messages)
 	}
 
 	public func inboxState(refreshFromNetwork: Bool) async throws -> InboxState

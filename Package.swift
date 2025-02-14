@@ -20,7 +20,7 @@ let package = Package(
     .package(url: "https://github.com/web3swift-team/web3swift.git", from: "3.2.1"),
 		.package(url: "https://github.com/bufbuild/connect-swift", exact: "1.0.0"),
 		.package(url: "https://github.com/apple/swift-docc-plugin.git", from: "1.4.3"),
-		.package(url: "https://github.com/xmtp/libxmtp-swift.git", exact: "3.0.13")
+		.package(url: "https://github.com/xmtp/libxmtp-swift.git", exact: "3.0.25")
 	],
 	targets: [
 		.target(
